@@ -13,7 +13,7 @@ from s3_upload import upload_file
 # Directory variables (root dir, data dir, etc.)
 import pandas
 
-
+DATA_DIR = os.path.join(os.getcwd(), 'data')
 DIR = os.getcwd()
 
 #Path to input file(s)
@@ -36,7 +36,7 @@ def main():
     message = os.getenv("AD_MESSAGE", "Running a Sample Python Script on Discover")
     print(message)
 
-    df = pandas.read_csv(os.path.join(os.getcwd(), 'icd10cm_codes_2020.csv'))
+    df = pandas.read_csv(os.path.join(DATA_DIR, 'icd10cm_codes_2020.csv'))
 
     # Discover UI uses 'results.json' file to display the output to use
     # For information on results.json format see: ???
@@ -48,32 +48,33 @@ def main():
     for input_file in file_list:
         #boolean variable to track if input_file is local
         local = True
+
+        #Check whether file is in s3, if not assume its local
         if search("s3.amazonaws.com", input_file):
             local = False
             #Use Regex to find the bucket and key matches
             Regex = re.search('https://(.+?).s3.amazonaws.com/(.*)', input_file)
 
-            #Set Bucket Name
+            #s3 bucket name
             bucket_name = Regex.group(1)
-            #print("Bucket : " + bucket_name)
-            
-            #Set Object Key
+            #Path to file inside bucket
             key = Regex.group(2)
-            #print("Key : " + key)
 
             #Initialize S3 and set bucket
             s3 = boto3.resource('s3')
             my_bucket = s3.Bucket(bucket_name)
+
             path, filename = os.path.split(key)
             my_bucket.download_file(key, filename)
 
-            DIR = os.getcwd()
+            #Set input_file to reference new local copy of the file
             input_file = os.path.join(os.getcwd(), filename)
+
+            DIR = os.getcwd()
 
         else:
             DIR = os.path.dirname(input_file)
 
-        #print("DIRECTORY: " + DIR)
         df_in = pandas.read_csv(input_file, header=None, names=['code'])
 
         for c in df_in['code']:
@@ -102,8 +103,9 @@ def main():
             "link": output_filename,
         })
 
-        #Save Results back to S3 if needed
+        #Upload Results to S3 if the file originated from there
         if not local:
+            #if the file is inside of any folders within the S3 bucket we have to add the path and "/"
             if path:
                 upload_file(input_file, bucket_name, path + "/" + output_filename)
             else:
